@@ -11,15 +11,16 @@ from glob import glob
 from moviepy.editor import VideoFileClip
 from scipy.ndimage.measurements import label
 from sklearn.externals import joblib
+from collections import deque
 
 ### TODO: Tweak these parameters and see how the results change.
-color_space = 'HSV'  # Can be RGB, HSV, LUV, HLS, YUV, YCrCb
-orient = 9  # HOG orientations
-pix_per_cell = 8  # HOG pixels per cell
+color_space = 'YCrCb'  # Can be RGB, HSV, LUV, HLS, YUV, YCrCb
+orient = 11  # HOG orientations
+pix_per_cell = 16  # HOG pixels per cell
 cell_per_block = 2  # HOG cells per block
 hog_channel = "ALL"  # Can be 0, 1, 2, or "ALL"
 spatial_size = (16, 16)  # Spatial binning dimensions
-hist_bins = 16  # Number of histogram bins
+hist_bins = 64  # Number of histogram bins
 spatial_feat = True  # Spatial features on or off
 hist_feat = True  # Histogram features on or off
 hog_feat = True  # HOG features on or off
@@ -80,6 +81,11 @@ def extract_features(imgs, color_space='RGB', spatial_size=(32, 32),
         file_features = []
         # Read in each one by one
         image = mpimg.imread(file)
+
+        print "original image"
+        plt.imshow(image)
+        plt.show()
+
         # apply color conversion if other than 'RGB'
         if color_space != 'RGB':
             if color_space == 'HSV':
@@ -107,6 +113,16 @@ def extract_features(imgs, color_space='RGB', spatial_size=(32, 32),
             if hog_channel == 'ALL':
                 hog_features = []
                 for channel in range(feature_image.shape[2]):
+
+
+
+                    # _,hog_img=get_hog_features(feature_image[:, :, channel],
+                    #                                      orient, pix_per_cell, cell_per_block,
+                    #                                      vis=True, feature_vec=True)
+                    #
+                    # plt.imshow(hog_img)
+                    # plt.show()
+
                     hog_features.append(get_hog_features(feature_image[:, :, channel],
                                                          orient, pix_per_cell, cell_per_block,
                                                          vis=False, feature_vec=True))
@@ -249,6 +265,9 @@ def search_windows(img, windows, clf, scaler, color_space='RGB',
     for window in windows:
         # 3) Extract the test window from original image
         test_img = cv2.resize(img[window[0][1]:window[1][1], window[0][0]:window[1][0]], (64, 64))
+
+        # plt.imshow(test_img)
+        # plt.show()
         # 4) Extract features for that window using single_img_features()
         features = single_img_features(test_img, color_space=color_space,
                                        spatial_size=spatial_size, hist_bins=hist_bins,
@@ -259,7 +278,9 @@ def search_windows(img, windows, clf, scaler, color_space='RGB',
         # 5) Scale extracted features to be fed to classifier
         test_features = scaler.transform(np.array(features).reshape(1, -1))
         # 6) Predict using your classifier
+        # print test_features
         prediction = clf.predict(test_features)
+        # print prediction
         # 7) If positive (prediction == 1) then save the window
         if prediction == 1:
             on_windows.append(window)
@@ -306,6 +327,9 @@ def train():
     notcars = [y for x in os.walk('non-vehicles') for y in
                glob(os.path.join(x[0], '*.png'))]
 
+    # plt.imshow(mpimg.imread(cars[0]))
+    # plt.show()
+
     car_features = extract_features(cars, color_space=color_space,
                                     spatial_size=spatial_size, hist_bins=hist_bins,
                                     orient=orient, pix_per_cell=pix_per_cell,
@@ -351,54 +375,36 @@ def train():
     joblib.dump(svc, 'model.pkl')
     joblib.dump(X_scaler, 'scaler.pkl')
 
-
 svc = joblib.load('model.pkl')
 X_scaler = joblib.load('scaler.pkl')
 
+bbox_memory = deque()
+
 
 def process_image(image):
+    orig_img = np.copy(image)
+
+    image = image.astype(np.float32) / 255
     draw_image = np.copy(image)
 
     heat = np.zeros_like(draw_image[:, :, 0]).astype(np.float)
 
-    windows_small = slide_window(draw_image, x_start_stop=[100, 1350], y_start_stop=[370, 500],
-                                 xy_window=(80, 80), xy_overlap=(0.5, 0.5))
+    # create sliding windows
+    windows1 = slide_window(image, x_start_stop=[None, None], y_start_stop=[400, 640],
+                            xy_window= (128, 128), xy_overlap=(0.5, 0.5))
 
-    blah = draw_boxes(draw_image, windows_small, color=(0, 0, 255), thick=6)
-    plt.imshow(blah)
-    plt.show()
+    windows2 = slide_window(image, x_start_stop=[32, None], y_start_stop=[400, 600],
+                            xy_window=(96, 96), xy_overlap=(0.5, 0.5))
 
-    windows_medium = slide_window(draw_image, x_start_stop=[100, 1350], y_start_stop=[350, 490],
-                                  xy_window=(140, 140), xy_overlap=(0.5, 0.5))
+    windows3 = slide_window(image, x_start_stop=[412, 1280], y_start_stop=[390, 540],
+                            xy_window=(80, 80), xy_overlap=(0.5, 0.5))
 
-    blah2 = draw_boxes(draw_image, windows_medium, color=(0, 0, 255), thick=6)
-    plt.imshow(blah2)
-    plt.show()
+    windows = windows1 + windows2 + windows3
 
-    windows_large = slide_window(draw_image, x_start_stop=[0, 1300], y_start_stop=[320, 520],
-                                 xy_window=(200, 200), xy_overlap=(0.5, 0.5))
-
-    blah3 = draw_boxes(draw_image, windows_large, color=(0, 0, 255), thick=6)
-    plt.imshow(blah3)
-    plt.show()
-
-    windows_xlarge = slide_window(draw_image, x_start_stop=[0, 1300], y_start_stop=[300, 560],
-                                  xy_window=(260, 260), xy_overlap=(0.5, 0.5))
-
-    # blah4 = draw_boxes(draw_image, windows_xlarge, color=(0, 0, 255), thick=6)
-    # plt.imshow(blah4)
+    # windows_on_img = draw_boxes(draw_image, windows, color=(0, 0, 255), thick=6)
+    # plt.imshow(windows_on_img)
     # plt.show()
 
-
-    windows_xxlarge = slide_window(draw_image, x_start_stop=[0, 1300], y_start_stop=[290, 700],
-                                   xy_window=(320, 320), xy_overlap=(0.5, 0.5))
-    #
-    # blah5 = draw_boxes(draw_image, windows_xxlarge, color=(0, 0, 255), thick=6)
-    # plt.imshow(blah5)
-    # plt.show()
-
-
-    windows = windows_small + windows_medium + windows_large +windows_xlarge+windows_xxlarge
 
     hot_windows = search_windows(draw_image, windows, svc, X_scaler, color_space=color_space,
                                  spatial_size=spatial_size, hist_bins=hist_bins,
@@ -407,29 +413,59 @@ def process_image(image):
                                  hog_channel=hog_channel, spatial_feat=spatial_feat,
                                  hist_feat=hist_feat, hog_feat=hog_feat)
 
-    heat = add_heat(heat, hot_windows)
-    heat = apply_threshold(heat, 3.0)
-    heatmap = np.clip(heat, 0, 255)
 
-    labels = label(heatmap)
-
-    print(labels[1], 'cars found')
-
-    labelled_image = draw_labeled_bboxes(np.copy(image), labels)
-
-    window_img = draw_boxes(draw_image, hot_windows, color=(0, 0, 255), thick=6)
-
-    plt.imshow(window_img)
-    plt.show()
-
-    plt.imshow(heatmap)
-    plt.show()
+    # window_img = draw_boxes(draw_image, hot_windows, color=(0, 0, 255), thick=6)
+    #
+    # plt.imshow(window_img)
+    # plt.show()
 
 
-    plt.imshow(labelled_image)
-    plt.show()
+    print "new bounding boxes:"
+    print hot_windows
 
-    return labelled_image
+    # don't detect anything until memory is full
+    if len(bbox_memory) < 15:
+        bbox_memory.appendleft(hot_windows)
+
+        return draw_image
+
+    else:
+
+        # forget oldest bounding boxes
+        bbox_memory.pop()
+        # add newest bounding boxes
+        bbox_memory.appendleft(hot_windows)
+
+        previous_bboxes = []
+
+        print "bounding boxes in memory"
+        for bbox in bbox_memory:
+            print bbox
+            previous_bboxes.extend(bbox)
+
+        # get heatmap from bounding boxes found in previous frames
+        heat = add_heat(heat, previous_bboxes)
+        # theshold to remove false positives
+        heat = apply_threshold(heat, 9.0)
+        heatmap = np.clip(heat, 0, 255)
+
+        labels = label(heatmap)
+
+        print(labels[1], 'cars found')
+
+        labelled_image = draw_labeled_bboxes(orig_img, labels)
+
+        # plt.imshow(window_img)
+        # plt.show()
+        # #
+        # plt.imshow(heatmap)
+        # plt.show()
+        # #
+        # #
+        # plt.imshow(labelled_image)
+        # plt.show()
+
+        return labelled_image
 
 
 def find_lines_in_video(video_path):
@@ -441,7 +477,7 @@ def find_lines_in_video(video_path):
     clip_with_lines.write_videofile('project_video_solution.mp4', audio=False)
 
 
-# find_lines_in_video('project_video.mp4')
+#find_lines_in_video('project_video.mp4')
 
-process_image(mpimg.imread('test_images/test2.jpg'))
-# train()
+process_image(mpimg.imread('test_images/test4.jpg'))
+#train()
